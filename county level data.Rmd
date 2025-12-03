@@ -369,45 +369,126 @@ library(readr)
 
 inc_raw <- read_csv("Income.csv", show_col_types = FALSE)
 
-# If the CSV sometimes arrives with duplicate/blank names, sanitize:
-inc_raw <- inc_raw %>% remove_empty("cols")
-inc_raw <- janitor::clean_names()  # makes "Label (Grouping)" -> "label_grouping"
+inc_raw <- inc_raw %>%
+  remove_empty("cols") %>%
+  rename(label_grouping = `Label (Grouping)`) %>%
+  select(-contains("Margin of Error"))   # <- drop all MOE columns
 
-# --- 1) Keep only Estimate columns and the label column; drop MOE entirely ---
-# Estimate/MOE live in the *column names* (e.g., "Allen County, Ohio!!Households!!Estimate")
-# The label column is the row descriptor (e.g., "Total", "$10,000 to $14,999", etc.)
-inc_est <- inc_raw %>%
-  select(
-    label_grouping,
-    matches("!!Estimate$")     # only keep ...!!Estimate
-  )
 
-# --- 2) Turn columns into tidy rows, then split composite names ---
-inc_tidy <- inc_est %>%
-  pivot_longer(
-    cols = -label_grouping,
-    names_to = "key",
-    values_to = "value"
-  ) %>%
-  separate(
-    key,
-    into = c("geography", "group", "stat"),
-    sep  = "!!",
-    fill = "right",
-    extra = "merge"
-  ) %>%
-  filter(stat == "Estimate")  # should always be Estimate now
-
-# --- 3) Clean geography -> county; keep statewide rows if you need them later ---
-inc_tidy <- inc_tidy %>%
-  mutate(
-    geography = str_squish(geography),
-    county = geography %>%
-      str_replace(",\\s*Ohio$", "") %>%
-      str_replace("\\s*County$", "") %>%
-      str_squish() %>%
-      str_to_title()
-  )
-
+# Clean up the column names
+names(inc_raw) <- names(inc_raw) %>%
+  str_replace_all(",\\s*Ohio", "") %>%  # drop ", Ohio"
+  str_replace_all("!!", " ") %>%        # replace "!!" with spaces
+  str_squish()                          # trim/squish whitespace
 ```
 
+```{r}
+library(tidyverse)
+library(stringr)
+library(janitor)
+library(readr)
+
+inc_raw <- read_csv("Income.csv", show_col_types = FALSE)
+
+inc_raw <- inc_raw %>%
+  remove_empty("cols") %>%
+  rename(label_grouping = `Label (Grouping)`) %>%
+  select(-contains("Margin of Error"))
+  # plus any name-cleaning you already did on column names, if desired
+
+# 1) Convert all non-label columns to numeric, treating ACS placeholders as NA
+inc_num <- inc_raw %>%
+  mutate(
+    across(
+      -label_grouping,
+      ~ readr::parse_number(.x, na = c("NA", "(X)", "N/A", "-", "X"))
+    )
+  )
+
+# 2) Get the totals from row 1 (now numeric)
+totals <- inc_num %>%
+  slice(1) %>%
+  select(-label_grouping)
+
+# 3) For rows 2–10, interpret values as percentages and convert to counts
+inc_counts <- inc_num %>%
+  mutate(row_id = row_number()) %>%
+  mutate(
+    across(
+      -c(label_grouping, row_id),
+      ~ if_else(
+          row_id %in% 2:11 & !is.na(.) & !is.na(totals[[cur_column()]]),
+          round(. / 100 * totals[[cur_column()]]),
+          .    # leave row 1 and any other rows as they are (or NA)
+        )
+    )
+  ) %>%
+  select(-row_id)
+
+names(inc_counts) <- names(inc_counts) %>% 
+  # remove the ", Ohio"
+  str_replace_all(",\\s*Ohio", "") %>%
+  # replace "!!" with a space
+  str_replace_all("!!", " ") %>%
+  # drop the trailing "Estimate"
+  str_replace("\\s*Estimate$", "") %>%
+  # clean up extra whitespace
+  str_squish()
+```
+
+
+
+```{r}
+#inc_counts <- inc_counts %>%
+#  slice(1:(n() - 4))
+
+library(dplyr)
+library(stringr)
+
+# 1) Get all non-label columns and split them into groups of 4
+all_cols  <- names(inc_counts)
+value_cols <- all_cols[all_cols != "label_grouping"]
+
+groups <- split(value_cols, ceiling(seq_along(value_cols) / 4))
+
+# 2) For each group of 4, create a new "X Sums" column = row-wise sum of those 4
+for (g in groups) {
+  last_col  <- g[length(g)]
+  first_word <- str_extract(last_col, "^[^\\s]+")  # first word of the last column name
+  new_name  <- paste(first_word, "Sums")
+
+  inc_counts[[new_name]] <- rowSums(inc_counts[g], na.rm = TRUE)
+}
+
+# 3) Optional: reorder so each Sums column comes right after its 4 originals
+new_order <- c("label_grouping")
+for (g in groups) {
+  last_col  <- g[length(g)]
+  first_word <- str_extract(last_col, "^[^\\s]+")
+  sum_col   <- paste(first_word, "Sums")
+  new_order <- c(new_order, g, sum_col)
+}
+
+inc_counts <- inc_counts[, new_order]
+
+
+names(inc_counts)
+```
+
+```{r}
+keep_cols <- c(
+  "label_grouping",
+  grep("Sums", names(inc_counts), value = TRUE, ignore.case = TRUE)
+)
+
+inc_counts <- inc_counts[, keep_cols]
+```
+
+```{r}
+library(tidyr)
+library(stringr)
+
+names(inc_counts) <- names(inc_counts) |>
+  str_remove(regex("sums", ignore_case = TRUE)) |>
+  str_squish()
+```
