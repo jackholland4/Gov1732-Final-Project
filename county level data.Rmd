@@ -274,3 +274,140 @@ ohio_joined_race <- ohio_joined_age |>
   )
 ```
 
+
+```{r}
+library(tidyverse)
+library(stringr)
+
+edu_raw <- read_csv("EduAttain.csv", col_names = FALSE, show_col_types = FALSE)
+
+new_names <- edu_raw %>%
+  slice(2) %>%
+  unlist() %>%
+  as.character()
+
+edu <- edu_raw %>%
+  slice(-c(1, 2))     # remove first two rows
+colnames(edu) <- new_names
+
+nm <- names(edu)
+nm <- replace_na(nm, "")
+
+estimate_cols2 <- nm[str_detect(nm, regex("Estimate!!Total!!", ignore_case = TRUE))]
+
+id_candidates <- c("Geographic Area Name")
+id_cols2 <- intersect(id_candidates, nm)
+
+edu_estimate <- edu %>%
+  select(any_of(id_cols2), all_of(estimate_cols2))
+
+nm2 <- names(edu_estimate)
+nm2 <- replace_na(nm2, "")
+
+estimate_cols3 <- nm2[str_detect(nm2, regex("AGE BY EDUCATIONAL ATTAINMENT", ignore_case = TRUE))]
+
+edu_estimate2 <- edu_estimate %>%
+  select(any_of(id_cols2), all_of(estimate_cols3))
+
+# 4) Clean county name; optionally keep only county rows
+edu_estimate2 <- edu_estimate2 %>%
+  mutate(
+    `Geographic Area Name` = str_squish(`Geographic Area Name`),
+    county = `Geographic Area Name` %>%
+      str_replace(",\\s*Ohio$", "") %>%
+      str_replace("\\s*County$", "") %>%
+      str_squish() %>%
+      str_to_title()
+  ) %>%
+  relocate(county, .after = `Geographic Area Name`)
+
+edu_totals <- edu_estimate2 %>%
+  mutate(across(
+    contains("Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT"),
+    ~ readr::parse_number(as.character(.x))
+  )) %>%
+  mutate(
+    pop_18_24      = `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 18 to 24 years`,
+    pop_25plus     = `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over`,
+    pop_18plus     = pop_18_24 + pop_25plus,
+
+    # Less than high school (18–24 "less than HS") + (25+ "less than 9th" + "9–12 no diploma")
+    lt_hs_18plus   = `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 18 to 24 years!!Less than high school graduate` +
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over!!Less than 9th grade` +
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over!!9th to 12th grade, no diploma`,
+
+    # High school graduate (18–24 HS grad) + (25+ HS grad)
+    hs_grad_18plus = `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 18 to 24 years!!High school graduate (includes equivalency)` +
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over!!High school graduate (includes equivalency)`,
+
+    # Some college or associate’s (18–24 some college/AA) + (25+ some college no degree + AA)
+    some_coll_18plus =
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 18 to 24 years!!Some college or associate's degree` +
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over!!Some college, no degree` +
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over!!Associate's degree`,
+
+    # Bachelor’s or higher (18–24 BA+) + (25+ BA + Grad/Prof)
+    ba_plus_18plus = `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 18 to 24 years!!Bachelor's degree or higher` +
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over!!Bachelor's degree` +
+                     `Estimate!!Total!!AGE BY EDUCATIONAL ATTAINMENT!!Population 25 years and over!!Graduate or professional degree` ) %>%
+
+
+  # 4) keep a clean output set with better labels
+  select(
+    `Geographic Area Name`, county,
+    pop_18_24, pop_25plus, pop_18plus,
+    lt_hs_18plus, hs_grad_18plus, some_coll_18plus, ba_plus_18plus
+  )
+
+```
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(janitor)
+library(readr)
+
+inc_raw <- read_csv("Income.csv", show_col_types = FALSE)
+
+# If the CSV sometimes arrives with duplicate/blank names, sanitize:
+inc_raw <- inc_raw %>% remove_empty("cols")
+inc_raw <- janitor::clean_names()  # makes "Label (Grouping)" -> "label_grouping"
+
+# --- 1) Keep only Estimate columns and the label column; drop MOE entirely ---
+# Estimate/MOE live in the *column names* (e.g., "Allen County, Ohio!!Households!!Estimate")
+# The label column is the row descriptor (e.g., "Total", "$10,000 to $14,999", etc.)
+inc_est <- inc_raw %>%
+  select(
+    label_grouping,
+    matches("!!Estimate$")     # only keep ...!!Estimate
+  )
+
+# --- 2) Turn columns into tidy rows, then split composite names ---
+inc_tidy <- inc_est %>%
+  pivot_longer(
+    cols = -label_grouping,
+    names_to = "key",
+    values_to = "value"
+  ) %>%
+  separate(
+    key,
+    into = c("geography", "group", "stat"),
+    sep  = "!!",
+    fill = "right",
+    extra = "merge"
+  ) %>%
+  filter(stat == "Estimate")  # should always be Estimate now
+
+# --- 3) Clean geography -> county; keep statewide rows if you need them later ---
+inc_tidy <- inc_tidy %>%
+  mutate(
+    geography = str_squish(geography),
+    county = geography %>%
+      str_replace(",\\s*Ohio$", "") %>%
+      str_replace("\\s*County$", "") %>%
+      str_squish() %>%
+      str_to_title()
+  )
+
+```
+
