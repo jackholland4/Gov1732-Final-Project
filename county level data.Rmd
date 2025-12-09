@@ -405,4 +405,52 @@ diff_model <- lm(diff_margin ~ voter_turnout + pct_female + pct_white + `2022_BF
 
 summary(diff_model)
 ```
+```{r}
+disparity_plot <- ggplot(data = ohio_joined_race, aes(x = pct_white, y = diff_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "Percentage White Non-Hispanic",
+    y = "Difference in Referendum Margin (Abortion - Weed)",
+    title = "County-Level Disparities in Ohio 2023 Mid Year Referenda Margins",
+    subtitle = "By Percentage White Non-Hispanic"
+  )
+
+disparity_plot
+```
+```{r}
+turnout_disparity_plot <- ggplot(data = ohio_joined_race, aes(x = voter_turnout, y = diff_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "Voter Turnout (County Level)",
+    y = "Difference in Referendum Margin (Abortion - Weed)",
+    title = "County-Level Disparities in Ohio 2023 Mid Year Referenda Margins",
+    subtitle = "By County Level Turnout"
+  )
+
+turnout_disparity_plot
+```
+```{r}
+abortion_income_plot <- ggplot(data = ohio_joined_race, aes(x = `2022_BFA_Percap_Income`, y = abortion_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "Median Income (County Level)",
+    y = "Abortion Referendum Margin",
+    title = "Income versus Abortion Margin"
+  )
+
+abortion_income_plot
+```
+```{r}
+#population-weighted regression -- trying to fix some of our ecological inference issues
+
+model_weighted <- lm(diff_margin ~ voter_turnout + pct_female + pct_white + `2022_BFA_Percap_Income`,
+                     data = ohio_joined_race,
+                     weights = `Registered Voters`)
+
+summary(model_weighted)
+```
+
 
