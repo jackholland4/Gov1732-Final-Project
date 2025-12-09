@@ -358,7 +358,7 @@ edu_totals <- edu_estimate2 %>%
 
   # 4) keep a clean output set with better labels
   select(
-    `Geographic Area Name`, county,
+    county,
     pop_18_24, pop_25plus, pop_18plus,
     lt_hs_18plus, hs_grad_18plus, some_coll_18plus, ba_plus_18plus
   )
