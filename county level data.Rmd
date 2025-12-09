@@ -180,10 +180,6 @@ panel.grid = element_blank(),
     legend.position = "right"
   )
 ```
-```{r}
-min(ohio_prop_map_df$weed_margin)
-```
-
 
 ```{r}
 ggplot(ohio_prop_map_df) +
@@ -490,7 +486,7 @@ make_race_map <- function(col, label, color) {
       name = paste0("Percent ", label)
     ) +
     labs(
-      title = paste0("Ohio Race: ", label, " (2023)")
+      title = paste0("Ohio Race: ", label)
     ) +
     theme_minimal() +
     theme(
@@ -623,7 +619,9 @@ panel.grid = element_blank(),
 
 ```{r}
 ohio_joined_race_2 <- ohio_joined_race |>
-  rename(inc_2022_BFA_Percap = `2022_BFA_Percap_Income`)
+  rename(inc_2022_BFA_Percap = `2022_BFA_Percap_Income`) |>
+  mutate(pct_20_44 = pct_20_24 + pct_25_34 + pct_35_44,
+         pct_60_84 = pct_60_64 + pct_65_74 + pct_75_84)
 
 #regression models!
 
@@ -631,15 +629,13 @@ ohio_joined_race_2 <- ohio_joined_race |>
 model_abortion_pct <- lm(
   abortion_pct ~ 
     pct_female +
-    pct_25_34 +
-    pct_65_74 +
+    pct_20_44 +
+    pct_60_84 +
     pct_white +
-    pct_black +
-    pct_hispanic +
     inc_2022_BFA_Percap +
-    pct_hs_grad_18plus +
     pct_ba_plus_18plus,
-  data = ohio_joined_race_2
+  data = ohio_joined_race_2,
+  weights = `Registered Voters`
 )
 
 summary(model_abortion_pct)
@@ -672,41 +668,35 @@ ggplot(coef_df_abortion, aes(x = estimate, y = term)) +
 ```{r}
 predictors <- c(
   "pct_female",
-  "pct_25_34",
-  "pct_65_74",
-  "pct_white",
-  "pct_black",
-  "pct_hispanic",
-  "inc_2022_BFA_Percap",
-  "pct_hs_grad_18plus",
-  "pct_ba_plus_18plus"
-)
+    "pct_20_44",
+    "pct_60_84",
+    "pct_white",
+    "inc_2022_BFA_Percap",
+    "pct_ba_plus_18plus")
 
 
 dat <- ohio_joined_race_2 %>% st_drop_geometry()
 
-X <- model.matrix(
-  as.formula(paste("~", paste(predictors, collapse = " + "))),
-  data = dat
-)[, -1]  # drop intercept column
-
+X <- as.matrix(dat[, predictors])
 y <- dat$abortion_pct
+w <- dat$`Registered Voters`
 
-# Fit Elastic Net using 10-fold CV
 set.seed(123)
 cv_abortion <- cv.glmnet(
   x = X,
   y = y,
-  alpha = 0.5,        
+  alpha = 0.5,
   nfolds = 10,
+  weights = w,         
   standardize = TRUE
 )
+
+coef_abortion <- coef(cv_abortion, s = "lambda.min")
+coef_abortion
 
 lambda_min_abortion <- cv_abortion$lambda.min
 lambda_1se_abortion <- cv_abortion$lambda.1se
 
-coef_abortion <- coef(cv_abortion, s = "lambda.min")
-coef_abortion
 ```
 
 
@@ -715,15 +705,13 @@ coef_abortion
 model_weed_pct <- lm(
   weed_pct ~ 
     pct_female +
-    pct_25_34 +
-    pct_65_74 +
+    pct_20_44 +
+    pct_60_84 +
     pct_white +
-    pct_black +
-    pct_hispanic +
     inc_2022_BFA_Percap +
-    pct_hs_grad_18plus +
     pct_ba_plus_18plus,
-  data = ohio_joined_race_2
+  data = ohio_joined_race_2,
+  weights = `Registered Voters`
 )
 
 summary(model_weed_pct)
@@ -751,13 +739,13 @@ ggplot(coef_df_weed, aes(x = estimate, y = term)) +
 
 
 ```{r}
-y_weed <- dat$weed_pct
+y <- dat$weed_pct
 
-set.seed(123)
 cv_weed <- cv.glmnet(
-  X, y_weed,
+  X, y,
   alpha = 0.5,
   nfolds = 10,
+  weights = w,
   standardize = TRUE
 )
 
@@ -773,14 +761,13 @@ coef_weed
 model_diff_margin <- lm(
   diff_margin ~ 
     pct_female +
-    pct_25_34 +
-    pct_65_74 +
-    pct_black +
-    pct_hispanic +
+    pct_20_44 +
+    pct_60_84 +
+    pct_white +
     inc_2022_BFA_Percap +
-    pct_hs_grad_18plus +
     pct_ba_plus_18plus,
-  data = ohio_joined_race_2
+  data = ohio_joined_race_2,
+  weights = `Registered Voters`
 )
 
 summary(model_diff_margin)
@@ -810,13 +797,13 @@ ggplot(coef_df_margin, aes(x = estimate, y = term)) +
 
 
 ```{r}
-y_diff <- dat$diff_margin
+y <- dat$diff_margin
 
-set.seed(123)
 cv_diff <- cv.glmnet(
-  X, y_diff,
+  X, y,
   alpha = 0.5,
   nfolds = 10,
+  weights = w,
   standardize = TRUE
 )
 
@@ -832,14 +819,13 @@ coef_diff
 model_turnout_diff <- lm(
   prop_turnout_diff_pct ~ 
     pct_female +
-    pct_25_34 +
-    pct_65_74 +
-    pct_black +
-    pct_hispanic +
+    pct_20_44 +
+    pct_60_84 +
+    pct_white +
     inc_2022_BFA_Percap +
-    pct_hs_grad_18plus +
     pct_ba_plus_18plus,
-  data = ohio_joined_race_2
+  data = ohio_joined_race_2,
+  weights = `Registered Voters`
 )
 
 summary(model_turnout_diff)
@@ -869,15 +855,16 @@ ggplot(coef_df_turnout, aes(x = estimate, y = term)) +
 
 
 ```{r}
-y_turnout <- dat$prop_turnout_diff_pct
+y <- dat$prop_turnout_diff_pct
 
-set.seed(123)
 cv_turnout <- cv.glmnet(
-  X, y_turnout,
+  X, y,
   alpha = 0.5,
   nfolds = 10,
+  weights = w,
   standardize = TRUE
 )
+
 
 lambda_min_turnout <- cv_turnout$lambda.min
 lambda_1se_turnout <- cv_turnout$lambda.1se
@@ -989,4 +976,160 @@ weed_income_plot <- ggplot(data = ohio_joined_race, aes(x = `2022_BFA_Percap_Inc
 weed_income_plot
 ```
 
+
+```{r}
+# Chat GPT helped me generate this helper function to add R^2 and equation to the graphs
+
+add_lm_labels <- function(df, xvar, yvar) {
+  
+  # build formula safely as text
+  fm <- as.formula(paste(yvar, "~", xvar))
+  
+  # fit model
+  m <- lm(fm, data = df)
+  
+  # extract coefficients + R²  
+  eq  <- sprintf("y = %.3f + %.3f x", coef(m)[1], coef(m)[2])
+  r2  <- sprintf("R² = %.3f", summary(m)$r.squared)
+  
+  list(eq = eq, r2 = r2)
+}
+
+```
+
+```{r}
+labels <- add_lm_labels(ohio_joined_race, "pct_white", "diff_margin")
+
+ggplot(ohio_joined_race, aes(x = pct_white, y = diff_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  annotate("text", x = Inf, y = Inf, label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% White (non-Hispanic)",
+    y = "Abortion - Weed Margin (pp)",
+    title = "Counties with a Larger White Population Lean More Pro-Abortion than Pro-Weed",
+    subtitle = "Bivariate relationship with linear trend"
+  ) +
+  theme_minimal()
+
+labels <- add_lm_labels(ohio_joined_race, "pct_black", "diff_margin")
+
+ggplot(ohio_joined_race, aes(x = pct_black, y = diff_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  annotate("text", x = Inf, y = Inf, label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% Black (non-Hispanic)",
+    y = "Abortion - Weed Margin (pp)",
+    title = "Counties with a Larger Black Populations Lean More Pro-Weed than Pro-Abortion",
+    subtitle = "Bivariate relationship with linear trend"
+  ) +
+  theme_minimal()
+```
+
+
+```{r}
+labels <- add_lm_labels(ohio_joined_race, "pct_ba_plus_18plus", "diff_margin")
+
+ggplot(ohio_joined_race, aes(x = pct_ba_plus_18plus, y = diff_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  annotate("text", x = Inf, y = Inf, label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% BA or Higher (Age 18+)",
+    y = "Abortion - Weed Margin",
+    title = "Counties with Higher Education Levels Lean More Pro-Abortion than Pro-Weed"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+labels <- add_lm_labels(ohio_joined_race_2, "inc_2022_BFA_Percap", "diff_margin")
+
+ggplot(ohio_joined_race_2, aes(x = inc_2022_BFA_Percap, y = diff_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "purple") +
+  annotate("text", x = Inf, y = Inf, label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "Per Capita Income (2022)",
+    y = "Difference in Margin (Abortion - Weed)",
+    title = "Higher Income Counties Show Larger Pro-Abortion Margins"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+labels <- add_lm_labels(ohio_joined_race_2, "pct_female", "diff_margin")
+
+ggplot(ohio_joined_race_2, aes(x = pct_female, y = diff_margin)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "magenta") +
+  annotate("text", x = Inf, y = Inf, label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% Female",
+    y = "Difference in Margin (Abortion - Weed)",
+    title = "Counties with a Larger Female Populations Lean More Pro-Abortion than Pro-Weed"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ohio_joined_race_3 <- ohio_joined_race_2 |>
+  mutate(pct_20_44 = pct_20_24 + pct_25_34 + pct_35_44,
+         pct_60_84 = pct_60_64 + pct_65_74 + pct_75_84)
+
+labels <- add_lm_labels(ohio_joined_race_3, "pct_20_44", "weed_pct")
+
+ggplot(ohio_joined_race_3, aes(x = pct_20_44, y = weed_pct)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "forestgreen") +
+  annotate("text", x = Inf, y = Inf, 
+           label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% Aged 20–44",
+    y = "Weed Yes Vote %",
+    title = "Counties with Younger Populations Show Higher Marijuana Support",
+    subtitle = "Youth-heavy counties overwhelmingly favor legalization"
+  ) +
+  theme_minimal()
+
+labels <- add_lm_labels(ohio_joined_race_3, "pct_20_44", "abortion_pct")
+
+ggplot(ohio_joined_race_3, aes(x = pct_20_44, y = abortion_pct)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "darkviolet") +
+  annotate("text", x = Inf, y = Inf, 
+           label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% Aged 20–44",
+    y = "Abortion Yes Vote %",
+    title = "Counties with Younger Populations Show Higher Abortion Support",
+    subtitle = "Youth-heavy counties overwhelmingly favor legalization"
+  ) +
+  theme_minimal()
+
+labels <- add_lm_labels(ohio_joined_race_3, "pct_60_84", "weed_pct")
+
+ggplot(ohio_joined_race_3, aes(x = pct_60_84, y = weed_pct)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "darkred") +
+  annotate("text", x = Inf, y = Inf, 
+           label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% Aged 60–84",
+    y = "Weed Yes Vote %",
+    title = "Older Counties Are Less Supportive of Marijuana Legalization",
+    subtitle = "Support declines as older populations increase"
+  ) +
+  theme_minimal()
+```
 
