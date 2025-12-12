@@ -139,10 +139,10 @@ geom_sf(aes(fill = prop_turnout_diff_pct), color = NA) + scale_fill_gradient2(
     mid = "white",
     high = "darkviolet",
     midpoint = 0,
-name = "Abortion – Weed\nMargin (pp)" )+
+name = "Abortion – Marijuana\nMargin (pp)" )+
 labs(
 title = "Ohio County-Level Turnout Disparities\nAbortion vs. Marijuana  (2023)",
-caption = "Positive = More turnout for abortion than weed") + 
+caption = "Positive = More turnout for abortion than marijuana") + 
   theme_minimal() + 
   theme(panel.grid = element_blank(),
     legend.position = "right"
@@ -610,7 +610,7 @@ geom_sf(aes(fill = `2022_BFA_Percap_Income`), color = NA) + scale_fill_gradient2
     midpoint = min(ohio_joined_race$`2022_BFA_Percap_Income`, na.rm = TRUE),
     name = "2022 BEA Income per Capita by County"
 )+ labs(
-title = "Ohio Incomes (2023)" )+
+title = "Ohio Per-Capita Personal Income (2023)" )+
 theme_minimal() + theme(
 panel.grid = element_blank(),
     legend.position = "right"
@@ -1106,7 +1106,23 @@ ggplot(ohio_joined_race_2, aes(x = pct_female, y = diff_margin)) +
   labs(
     x = "% Female",
     y = "Difference in Margin (Abortion - Weed)",
-    title = "Counties with a Larger Female Populations Lean More Pro-Abortion than Pro-Weed"
+    title = "H1a: Counties with a Larger Female Populations Lean More 
+    Pro-Abortion than Pro-Marijuana"
+  ) +
+  theme_minimal()
+
+labels <- add_lm_labels(ohio_joined_race_2, "pct_female", "abortion_pct")
+
+ggplot(ohio_joined_race_2, aes(x = pct_female, y = abortion_pct)) +
+  geom_jitter() +
+  geom_smooth(method = "lm", se = TRUE, color = "magenta") +
+  annotate("text", x = Inf, y = Inf, label = paste(labels$eq, labels$r2, sep="\n"),
+           hjust = 1.1, vjust = 1.2, size = 4) +
+  labs(
+    x = "% Female",
+    y = "Yes on Issue 1, Abortion (pp)",
+    title = "H1a: Counties with a Larger Female Populations Have a Higher 
+    Levels of Support for Issue 1 (Abortion)"
   ) +
   theme_minimal()
 ```
@@ -1163,5 +1179,50 @@ ggplot(ohio_joined_race_3, aes(x = pct_60_84, y = weed_pct)) +
     subtitle = "Support declines as older populations increase"
   ) +
   theme_minimal()
+```
+
+```{r}
+library(scales)
+
+vars <- c(
+  abortion_pct = "Abortion support (Issue 1), % Yes",
+  weed_pct     = "Marijuana support (Issue 2), % Yes",
+  diff_margin  = "Vote margin difference (Issue 1 − Issue 2), pp",
+  prop_turnout_diff_pct = "Turnout difference (Issue 1 − Issue 2), votes",
+  pct_female   = "Percent female",
+  pct_20_44    = "Percent ages 20–44",
+  pct_60_84    = "Percent ages 60–84",
+  non_white_pop = "Percent non-white",
+  inc_2022_BEA_Percap       = "Per capita income (USD)",
+  pct_ba_plus_18plus  = "Bachelor’s degree or higher (18+), %"
+)
+
+nogeo <- st_drop_geometry(ohio_joined_race_2)
+
+tab_A1 <- nogeo %>%
+  summarise(across(
+    all_of(names(vars)),
+    list(
+      Mean = ~mean(.x, na.rm = TRUE),
+      SD   = ~sd(.x, na.rm = TRUE),
+      Min  = ~min(.x, na.rm = TRUE),
+      Max  = ~max(.x, na.rm = TRUE)
+    ),
+    .names = "{.col}__{.fn}"   # << key change
+  )) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = c("var", "stat"),
+    names_sep = "__",         # << key change
+    values_to = "value"
+  ) %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  mutate(Variable = unname(vars[var])) %>%
+  select(Variable, Mean, SD, Min, Max)
+
+tab_A1
+
+knitr::kable(tab_A1, caption = "Table A1. Summary Statistics for Key Variables (Ohio Counties, 2023)")
+
 ```
 
